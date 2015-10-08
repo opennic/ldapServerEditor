@@ -3,7 +3,6 @@ error_reporting(E_ALL ^ E_NOTICE);
 include("fn.php");
 
 $page_timeout = 20;		// Value in minutes
-$cookie_expire = 604800;	// Value in seconds
 $logfile = "/var/log/serveredits.log";
 
 $LDAP['admin_user'] = "<USERNAME>";
