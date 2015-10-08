@@ -1,0 +1,47 @@
+--------------------
+- Status values
+--------------------
+
+APPROVAL:
+  New entry that is waiting for moderator approval.
+  * Not tested by reports page
+  * Not listed in dns.opennic.glue
+
+NEW:
+  Server has been approved and is available for use.  Remains in the 'new'
+  state for 7 days.
+
+UPDATED:
+  Any time an entry is changed, the server will be listed as updated.
+  It remains in this state for 1 day.
+
+PASS:
+  System has passed all testing.  This is the preferred status.
+
+FAIL:
+  Server failed one or more tests by the report scripts.  Usually this
+  indicates one or more OpenNIC zones are not working, or that the server
+  is no longer resolving ICANN domains.
+
+DOWN:
+  Server is not responding to any queries, generally indicated by timeout
+  failures.
+
+OFFLINE:
+  If a server continues to fail or is down for more than 7 days, it will
+  be moved to an offline status.  If the server is repaired and passes
+  testing for 2 days, it will be moved back into the general pool.
+
+PENDING:
+  When a server has remained offline for more than 14 days without repair,
+  it will be listed as pending deletion.  A server will not automatically
+  change from this state, it requires administrator intervention.
+  * Not tested by reports page
+  * Not listed in dns.opennic.glue
+
+DELETED:
+  Old servers are listed as deleted.  These are not shown except to
+  administrators.  Deleted servers can be resurrected by administrators
+  at a later date.
+  * Not tested by reports page
+  * Not listed in dns.opennic.glue
