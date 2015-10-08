@@ -1,0 +1,14 @@
+<?php
+error_reporting(E_ALL ^ E_NOTICE);
+include("fn.php");
+
+$page_timeout = 20;	// Value in minutes
+
+$LDAP['admin_user'] = "<USERNAME>";
+$LDAP['admin_pass'] = "<PASSWORD>";
+$LDAP['host'] = "ldaps://ldap.opennic.glue";
+$LDAP['base'] = "dc=opennic,dc=glue";
+
+$LDAP['admin_dn'] = "uid={$LDAP['admin_user']},o=users,{$LDAP['base']}";
+$LDAP['conn'] = ldap_connect($LDAP['host']) or die("Could not connect to {$LDAP['host']}<br>");
+ldap_set_option($LDAP['conn'], LDAP_OPT_PROTOCOL_VERSION, 3);
