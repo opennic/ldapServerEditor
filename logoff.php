@@ -1,6 +1,8 @@
 <?php
 session_start();
-//include("config.php");
+include("config.php");
+
+logger("Logged off from ".get_client_ip());
 
 unset($_SESSION['user']);
 unset($_SESSION['pass']);

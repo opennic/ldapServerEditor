@@ -7,21 +7,25 @@ $STATUS = array(
 		"button" => "Approve",
 		"title" => "Awaiting admin approval",
 		"css" => "app",
-		"abbr" => "Ap",
+		"abbr" => "Aprv",
 	),
 	"NEW" => array(
 		"stat" => "new",
 		"button" => "New",
 		"title" => "New server",
 		"css" => "new",
-		"abbr" => "Nw",
+		"abbr" => "New",
 	),
 	"UPDATED" => array(
 		"stat" => "updated",
 		"button" => "Updated",
 		"title" => "Changes have been made",
 		"css" => "updt",
-		"abbr" => "Upd",
+		"abbr" => "Updt",
+	),
+	"UPDT" => array( 	// Not a status, only used for buttons
+		"title" => "New or updated",
+		"abbr" => "Chg",
 	),
 	"PASS" => array(
 		"stat" => "normal",
@@ -34,15 +38,33 @@ $STATUS = array(
 		"stat" => "temp outage",
 		"button" => "Outage",
 		"title" => "Failing some tests",
-		"css" => "out",
-		"abbr" => "Fa",
+		"css" => "fail",
+		"abbr" => "Fail",
+	),
+	"DOWN" => array(
+		"stat" => "down",
+		"button" => "Down",
+		"title" => "Down, server is not responding",
+		"css" => "dwn",
+		"abbr" => "Down",
 	),
 	"OFFLINE" => array(
 		"stat" => "offline",
 		"button" => "Offline",
-		"title" => "Offline, not responding",
+		"title" => "Extended failure, server is offline",
 		"css" => "off",
-		"abbr" => "Ol",
+		"abbr" => "Offln",
+	),
+	"ERR" => array( 	// Not a status, only used for buttons
+		"title" => "Errors detected",
+		"abbr" => "Err",
+	),
+	"DISABLED" => array(
+		"stat" => "disabled",
+		"button" => "Disabled",
+		"title" => "Temporarily shut down",
+		"css" => "dis",
+		"abbr" => "Dis",
 	),
 	"PENDING" => array(
 		"stat" => "pending deletion",
@@ -64,10 +86,45 @@ $STATUS = array(
 
 /********** FUNCTIONS **********/
 
-function getNS($st, $cn) {
+function logger($txt) {
+  global $logfile;
+
+  $ts = date("M d H:i:s");
+  $tld = ($TLD) ? "$TLD: " : "";
+  $txt = trim($txt, "\n") . "\n";
+
+  if ($txt) {
+    $fh = fopen($logfile, "a");
+    if (! $usr = $_SESSION['user']) $usr = $_SERVER['REMOTE_ADDR'];
+    fwrite($fh, "$ts [$usr] $txt");
+    fclose($fh);
+  }
+}
+
+function get_client_ip() {
+  $ipaddress = '';
+  if ($_SERVER['HTTP_CLIENT_IP'])
+    $ipaddress = $_SERVER['HTTP_CLIENT_IP'];
+  else if($_SERVER['HTTP_X_FORWARDED_FOR'])
+    $ipaddress = $_SERVER['HTTP_X_FORWARDED_FOR'];
+  else if($_SERVER['HTTP_X_FORWARDED'])
+    $ipaddress = $_SERVER['HTTP_X_FORWARDED'];
+  else if($_SERVER['HTTP_FORWARDED_FOR'])
+    $ipaddress = $_SERVER['HTTP_FORWARDED_FOR'];
+  else if($_SERVER['HTTP_FORWARDED'])
+    $ipaddress = $_SERVER['HTTP_FORWARDED'];
+  else if($_SERVER['REMOTE_ADDR'])
+    $ipaddress = $_SERVER['REMOTE_ADDR'];
+  else
+    $ipaddress = 'UNKNOWN';
+  return $ipaddress;
+}
+
+function getNS($region, $country) {
+  // Get the first available NS number for a given region/country
   global $LDAP;
 
-  $server_name = trim("$st.$cn", ".");
+  $server_name = trim("$region.$country", ".");
 //echo "$server_name\n";
 
   $dn = "o=servers,".$LDAP['base'];
@@ -91,4 +148,37 @@ function getNS($st, $cn) {
   $server_name = "ns$lastNS.$server_name";
 
   return "ns$lastNS";
+}
+
+function diffdate($tm1, $tm2=0) {
+  if (! $tm2) $tm2 = time();
+  if (! $tm1) return array();
+  $diff = intval(abs($tm2 - $tm1) / 60); // difference in minutes
+  $dt['time1'] = $tm1;
+  $dt['time2'] = $tm2;
+  $dt['diff'] = $diff;
+
+  $dt['totalhours'] = intval($diff / 60);
+  $dt['totaldays'] = intval($diff / 1440);
+  $weeks = intval($diff / 10080);  $diff -= $weeks * 10080;
+  $days = intval($diff / 1440); $diff -= $days * 1440;
+  $hours = intval($diff / 60); $diff -= $hours * 60;
+
+  $dt['weeks'] = $weeks;
+  $dt['days'] = $days;
+  $dt['hours'] = $hours;
+  $dt['minutes'] = $diff;
+
+  if ($weeks) $str .= "$weeks week".S($weeks).", ";
+  if ($days) $str .= "$days day".S($days).", ";
+  if (($hours) && (! $weeks)) $str .= "$hours hour".S($hours).", ";
+  if (! $str) $str = "$diff minute".S($diff);
+  $dt['string'] = trim($str, ", ");
+
+  return $dt;
+}
+
+function S($num) {
+  if ($num == 1) return "";
+  else return "s";
 }

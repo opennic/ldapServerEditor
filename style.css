@@ -2,14 +2,16 @@ body {
 	font-family: Arial,Helvetica,sans-serif;
 }
 
-h1, h2, h3, h4, h5, h6 { cursor:default; text-align:center; }
+h1, h2, h3, h4, h5, h6 { cursor:default; text-align:center; position: relative; }
 button, input[type=submit] { cursor: pointer; }
 button:hover, input[type=submit]:hover { color: #666; }
 
 #frame {
-	margin: 32px auto 0;
+	position: relative;
+	margin: 0 auto;
 	text-align: center;
 }
+#frame > div { margin:0 auto; }
 
 .err {
 	color: red;
@@ -22,6 +24,27 @@ button:hover, input[type=submit]:hover { color: #666; }
 	transition: opacity 2s 5s;
 }
 .err:hover { opacity:1 !important; transition:opacity 0s; }
+
+#search {
+	display: inline-block;
+	font-size: 75%;
+	left: calc(50% + 264px);
+	position: absolute;
+	top: 0px;
+	white-space: nowrap;
+}
+#search label { font-weight:normal; }
+#search input {
+	border: 1px solid #999;
+	border-radius: 4px;
+	box-shadow: 0 0 1px #888;
+	line-height: 17px;
+	width: 150px;
+}
+#search a { margin-left:-46px; }
+#search input:focus { box-shadow: 0 0 5px #8be; }
+#search button { height:23px; padding:0; }
+
 
 #login {
 	border: 2px ridge black;
@@ -46,9 +69,10 @@ button:hover, input[type=submit]:hover { color: #666; }
 	color: #00f;
 }
 
+#login, #edit, #new {	margin-top:32px !important; }
+
 #list, #edit, #new, #view {
 	border: 2px ridge black;
-	margin: 0 auto;
 	overflow: auto;
 	padding: 10px;
 	text-align: center;
@@ -91,10 +115,12 @@ button:hover, input[type=submit]:hover { color: #666; }
 	list-style-type:none;
 	margin:10px 0 0 0;
 	padding:0;
+	cursor: default;
 }
 #cc.cbx { position:absolute; margin:0; }
 #tier.cbx { margin-top:8px; }
 .cbx li {
+	cursor:pointer;
 	display: inline-block;
 	font-size: 90%;
 	width:65px;
@@ -142,13 +168,17 @@ button:hover, input[type=submit]:hover { color: #666; }
 	z-index:90;
 	padding:3px 5px;
 }
-/*
-.cbx label:hover, .cbx input:hover {
+.cbx li:hover input,
+.cbx li:hover label,
+.cbx label:hover,
+.cbx input:hover {
 	background:#fff;
-	box-shadow: 0 0 1px #000;
 	color: #000;
 }
-*/
+
+#view .l { float:left; }
+#view .r { float:right; }
+#view .fn button, #view ul.fn { margin:0; }
 
 #view #ccg {
 	margin: 0 auto;
@@ -205,23 +235,20 @@ button:hover, input[type=submit]:hover { color: #666; }
 
 #view p { border:1px solid #666; display:table-row; }
 #view p:hover { box-shadow: 0 0 10px #888 inset; }
-#view p.app { background-color:#fc0; }
-//#view p.rem { background-color:#fdd; }
-#view p.rem { box-shadow: 0 0 8px #f99 inset; }
-#view p.del { background-color:#fdd; }
-/*
-#view p.del { background-color:#200; color:#fff; }
-#view p.del span.host a { color:#fff; }
-#view p.del span.mono a { color:#aaf; }
-#view p.del span a.mail { color:#f88 !important; }
-*/
 #view p.mine { box-shadow: 0 0 8px #0c0 inset; }
 #view p.mine:hover { box-shadow: 0 0 8px #999 inset; }
+#view p.app { background-color:#fc0; }
 #view p.new { background-color:#dff; }
-#view p.norm { background-color:#fff; }
 #view p.updt { background-color:#efe; }
-#view p.off { background-color:#fc9; }
-#view p.out { background-color:#ffd; }
+#view p.norm { background-color:#fff; }
+#view p.fail { background-color:#ffb; }
+#view p.dwn { background-color:#fca; }
+#view p.off { background-color:#fdd; }
+#view p.dis { background-color:#eee; color:#bbb; }
+#view p.dis a { color:#bbb !important; }
+#view p.rem { box-shadow: 0 0 8px #c22 inset; }
+#view p.del { background-color:#c66; }
+
 #view span {
 	cursor: default;
 	display: table-cell;
@@ -233,6 +260,7 @@ button:hover, input[type=submit]:hover { color: #666; }
 }
 #view span:last-child { border-right:1px solid #ddd; }
 #view p:last-child span { border-bottom:1px solid #ddd; }
+#view button.bttn { min-width:241px; }
 #view span.host { min-width:180px; }
 #view span.host a { color:black; }
 #view span.mono { font-family:monospace; }
@@ -281,9 +309,9 @@ button:hover, input[type=submit]:hover { color: #666; }
 	width:900px;
 }
 
-a.stats { color:#000; }
-a.stats div.stats { cursor:pointer !important; }
-div.stats {
+div.stats a { color:#000; }
+div.stats a div { cursor:pointer !important; }
+div.stats div {
 	background-color: #f8f8f8;
 	background: linear-gradient(#fff 25%, #ddd);
 	border: 1px solid #ccf;
@@ -298,9 +326,9 @@ div.stats {
 	padding: 2px;
 	vertical-align: middle;
 }
-#view h3 div.mine {
+div.stats div.mine {
 	background-color: #006;
-	background: linear-gradient(#00c 30%, #006);
+	background: linear-gradient(#00f 30%, #009);
 	border: 1px solid #66f;
 	color: #fff;
 }

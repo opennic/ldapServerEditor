@@ -1,37 +1,21 @@
 <?php
 session_start();
-$_SESSION['lastpage'] = "view.php";
+$_SESSION['lastpage'] = "/";
+$SELF = basename(__FILE__);
 
 /********** PARSE URL OPTIONS **********/
 
-// Set which servers to show
-if ($show = strtolower($_GET['show'])) {
-  if ($show == "all") $show = "";
-  $_SESSION['show'] = $show;
-  header("Location: view.php");
-}
-$show = $_SESSION['show'];
+$show = get_param("show", "all");		// filters
+$ccg = strtoupper(get_param("ccg", "ALL"));	// country group
+$tier = get_param("tier", 2);			// tier
+$sort = strtolower(get_param("sort", "host"));	// sort order
+$search = $_POST['search'];
+//if ($search) { $show = ""; $ccg = ""; }
 
-// Select sort order
-if ($sort = $_GET['sort']) {
-  $_SESSION['sort'] = strtolower(substr($sort,0,4));
-  header("Location: view.php");
-}
-$sort = $_SESSION['sort']; if (! $sort) $sort = "host";
-
-// Select tier to show
-if ($tier = intval($_GET['tier'])) {
-  $_SESSION['tier'] = $tier;
-  header("Location: view.php");
-}
-$tier = $_SESSION['tier']; if ($tier != 1) $tier = 2;
-
-// Select country group to show
-if ($ccg = strtoupper($_GET['ccg'])) {
-  $_SESSION['ccg'] = $ccg;
-  header("Location: view.php");
-}
-$ccg = $_SESSION['ccg']; if (! $ccg) $ccg = "ALL";
+//echo "$search<br>\n";
+//echo time()."<br>\n";
+//echo "SESSION<pre>"; print_r($_SESSION); echo "</pre>";
+//echo "COOKIE<pre>"; print_r($_COOKIE); echo "</pre>";
 
 
 /********** LOAD DATA TO DISPLAY PAGE **********/
@@ -54,37 +38,100 @@ if ($res['count']) $ADMIN = true;
 
 // Get list of all servers //
 $dn = "o=servers,".$LDAP['base'];
-$filter = "opennicserverrole=tier$tier";
-if ($show == "mine") $filter = "(&($filter)(manager=".$_SESSION['user_dn']."))";
-  else if ($show) $filter = "(&($filter)(zonestatus=$show))";
-if ((! $ADMIN) && (! $show)) $filter = "(&($filter)(!(zonestatus=deleted)))";
+$filter = "(opennicserverrole=tier$tier)";
+if ($search) {
+  $search = preg_replace('/\*/', '', $search);
+  $filter = "(&$filter(|";
+  $filter .= "(dc=*$search*)";
+  $filter .= "(arecord=*$search*)";
+  $filter .= "(aaaarecord=*$search*)";
+
+  $dx = "o=users,".$LDAP['base'];
+  $fx = "uid=*$search*";
+  $ax = array("uid");
+
+  $query = ldap_search($LDAP['conn'], $dx, $fx, $ax);
+  $uid = ldap_get_entries($LDAP['conn'], $query);
+  unset($uid['count']);
+//echo "<pre>"; print_r($uid); echo "</pre>"; die;
+  foreach((array)$uid as $ux)  $filter .= "(manager=".$ux['dn'].")";
+  //$filter .= "(manager=uid=$search,o=users,".$LDAP['base'].")";
+  $filter .= "))";
+}
+if ($show == "mine")
+  $filter = "(&$filter(manager=".$_SESSION['user_dn']."))";
+  else if ($show) {
+    $zs = "(zonestatus=$show)";
+    if ($show == "new") $zs .= "(zonestatus=updated)";
+    if ($show == "updated") $zs .= "(zonestatus=new)";
+    if ($show == "updt") $zs .= "(zonestatus=new)(zonestatus=updated)";
+    if ($show == "fail") $zs .= "(zonestatus=down)(zonestatus=offline)";
+    if ($show == "down") $zs .= "(zonestatus=fail)(zonestatus=offline)";
+    if ($show == "offline") $zs .= "(zonestatus=fail)(zonestatus=down)";
+    if ($show == "err") $zs .= "(zonestatus=fail)(zonestatus=down)(zonestatus=offline)";
+    $filter = "(&$filter(|$zs))";
+  }
+if ((! $ADMIN) && (! $show)) $filter = "(&$filter(!(zonestatus=deleted)))";
+//echo "FILTER: $filter<br>";
 $attr = array("*");
 
-$ldapbind = ldap_bind($LDAP['conn'], $LDAP['admin_dn'], $LDAP['admin_pass']);
 $query = @ldap_search($LDAP['conn'], $dn, $filter, $attr);
 @ldap_sort($LDAP['conn'], $query, "dc");
 $servers = @ldap_get_entries($LDAP['conn'], $query);
 unset($servers['count']);
-uasort($servers, "sort$sort");
+if (count($servers)) uasort($servers, "sort$sort");
 
-//echo "<pre>"; print_r($_SESSION); echo "</pre>"; die;
 //echo "<pre>"; print_r($servers); echo "</pre>"; die;
 
 $count = 0;
+//echo "Show: '$show'";
 foreach ((array)$servers as $id => $srv) {
   $stat = strtoupper($srv['zonestatus'][0]);
   if ($stat != "DELETED")  $count++;
-  $stats[$stat]++;
+
+  $btn = $stat;
+  if (! $show) {
+    if (($btn=="NEW") || ($btn=="UPDATED")) $btn = "UPDT";
+    if (($btn=="FAIL") || ($btn=="DOWN") || ($btn=="OFFLINE")) $btn = "ERR";
+  }
+  $stats[$btn]++;
   if ($srv['manager'][0] == $_SESSION['user_dn']) $stats['MINE']++;
 
-  preg_match('#(.*)\.([a-z]{1,3})(\.dns?)\.opennic\.glue#i', $srv['dc'][0], $match);
-  $cc = strtoupper($match[2]);
-  if ($ccTLD[$cc]) $CC[$cc][] = $srv; //['dc'][0];
+  if ($tier == 2) {
+    preg_match('#(.*)\.([a-z]{1,3})(\.dns?)\.opennic\.glue#i', $srv['dc'][0], $match);
+    $cc = strtoupper($match[2]);
+    if ($ccTLD[$cc]) $CC[$cc][] = $srv;
+  } else $CC["T$tier"][] = $srv;
 }
 //echo "<pre>"; print_r($CC); echo "</pre>"; die;
 //echo "<pre>"; print_r($stats); echo "</pre>";
 
 
+/********** FUNCTIONS **********/
+
+function get_param($parm, $default="") {
+  global $SELF;
+  $cookie_expire = 604800;	// Value in seconds
+
+  if ($val = strtolower($_GET[$parm])) {
+    if ($val == $default) unset($_SESSION[$parm], $_COOKIE[$parm]);
+    setcookie($parm, $val, time() + $cookie_expire);
+    $_SESSION[$parm] = $val;
+    header("Location: .");
+  }
+  if (($val = $_SESSION[$parm]) === false) $val = $_COOKIE[$parm];
+//echo "[$parm] '$val'<br>";
+  if ($parm == "show") $default = "";
+  if (($parm == "show") && (strtolower($val) == "all")) $val = "";
+  if ($val == "") {
+    unset($_SESSION[$parm], $_COOKIE[$parm]);
+    $val = $default;
+  } else {
+    $_SESSION[$parm] = $val;
+    setcookie($parm, $val, time() + $cookie_expire);
+  }
+  return $val;
+}
 
 function DMStoDEC($deg,$min,$sec) {
   // Converts degrees/minutes/seconds to decimal format
@@ -204,7 +251,7 @@ function sortby($tab, $col) {
     $a1 = "</a>";
     $class = "sel";
   }
-  echo "<span class='$class'>$a0$tab$a1</span>\n";
+  echo "<span class='$class $col'>$a0$tab$a1</span>\n";
 }
 
 ?>
@@ -213,6 +260,7 @@ function sortby($tab, $col) {
   <meta content="text/html; charset=UTF-8" http-equiv="content-type">
   <title><?=$pagetitle?></title>
   <link rel="stylesheet" href="style.css" type="text/css" media="all">
+  <link rel='icon' type='image/png' href='network.png'>
   <script type="text/javascript">
     function ccg(cc) {
       var obj = document.querySelectorAll("div[name^='ccg[']")
@@ -235,18 +283,28 @@ function sortby($tab, $col) {
 </head>
 
 <body onload="document.getElementById('errmsg').style.opacity='0'">
+<h3><?=$pagetitle?>
+  <div id='search'>
+  <form action="." method="post">
+<? if ($search) { ?>
+  <a href='<?=$SELF?>'><button type='button'>Clear</button></a>
+<? } ?>
+  <input name='search' value='<?=$search?>' autofocus=1 title='Search on hostname, IP, or owner'>
+  <button type='submit'>Search</button>
+</form></div></h3>
+
 <div id="frame">
  <div id="view">
 <? if ($_SESSION['user']) { ?>
   <!-- ADMIN BUTTONS -->
-  <a href='new.php' style='position:absolute; left:8px; top:0'><button type='button'>Add new server</button></a>
-  <a href='logoff.php' style='position:absolute; right:8px; top:0'><button type='button'>Sign off</button></a>
+  <a href='logoff.php' class='fn r'><button type='button'>Sign off</button></a>
+  <a href='new.php' class='fn l' style='margin-right:20px'><button type='button'>Add new server</button></a>
 <? } else { ?>
-  <a href='login.php' style='position:absolute; right:8px; top:0'><button type='button'>Log in</button></a>
+  <a href='login.php' class='fn r'><button type='button'>Log in</button></a>
 <? } ?>
 
   <!-- TIER BUTTONS -->
-  <ul id='tier' class='cbx' style='position:absolute; right:100px; top:0'>
+  <ul id='tier' class='cbx fn l'>
     <a href='?tier=1'><li onclick="window.location='?tier=1'">
       <input type='radio' id='tier1' name='tier'<?if ($tier==1) echo " checked"?>>
       <label for='tier1'>Tier1</label></li></a>
@@ -255,31 +313,34 @@ function sortby($tab, $col) {
       <label for='tier2'>Tier2</label></li></a>
   </ul>
 
-  <!-- FILTER BUTTONS -->
-<?  /********** SHOW TITLE AND STATUS BUTTONS **********/
-echo "  <h3 style='margin:0; padding-right:85px;'>";
+  <!-- STATUS BUTTONS -->
+<?  /********** SHOW STATUS BUTTONS **********/
+echo "  <div class='stats'>";
 if ($show) {
-  echo "<a href='?show=all' class='stats'>";
+  if (! $search) echo "<a href='?show=all' class='stats'>";
   echo "<div class='stats mine' title='Click to show all servers'>";
-  echo "&nbsp;show ALL servers&nbsp;</div></a> ";
+  echo "&nbsp;show ALL servers&nbsp;</div>";
+  if (! $search) echo "</a>";
+  echo "&nbsp;&nbsp;";
 } else if ($_SESSION['user']) {
-  echo "<a href='?show=mine' class='stats'>";
-  echo "<div class='stats' title='Click to show only your servers'>";
-  echo "Mine: ".$stats['MINE']."</div></a> ";
+  if (! $search) echo "<a href='?show=mine' class='stats'>";
+  echo "<div class='stats mine' title='Click to show only your servers'>";
+  echo "Mine: ".$stats['MINE']."</div>";
+  if (! $search) echo "</a>";
+  echo "&nbsp;&nbsp;";
 }
 
 foreach((array)$STATUS as $id => $val) {
   if ($stats[$id] > 0) {
-    if (! $show) echo "<a href='?show=$id' class='stats'>";
+    if ((! $show) && (! $search)) echo "<a href='?show=$id' class='stats'>";
     echo "<div class='stats'";
     echo " title='".$STATUS[$id]['title']."'>";
     echo $STATUS[$id]['abbr'].": ".$stats[$id];
     echo "</div>";
-    if (! $show) echo "</a>";
+    if ((! $show) && (! $search)) echo "</a>";
   }
 }
-echo " <div class='stats'>Total: $count</div>&nbsp;&nbsp;";
-echo "$pagetitle</h3>\n";
+echo "&nbsp;&nbsp;<div class='stats mine'>Total: $count</div></div>\n";
 
 
 /********** SHOW ERROR MESSAGE **********/
@@ -290,7 +351,7 @@ echo "  <div id='errmsg' class='err'>$err</div>\n";
 
 
 /********** SHOW COUNTRY BUTTONS **********/
-if (($tier != 1) && (! $show)) {
+if (($tier != 1) && (! $show) && (! $search)) {
   $ht = 33 * (1 + intval((count($CC)+1.5) / 27.5));
 ?>
 
@@ -315,9 +376,11 @@ if (($tier != 1) && (! $show)) {
   <!-- DISPLAY TABLE OF SERVERS -->
   <div id='srvlist'>
     <p class='th'>
+      <button class='bttn'></button>
+<? /*
       <button></button>
       <button></button>
-      <button></button>
+*/ ?>
       <? sortby("Hostname <label>(Click for details)</label>", "host"); ?>
       <? sortby("IPv4", "ipv4"); ?>
       <? sortby("IPv6", "ipv6"); ?>
@@ -327,17 +390,27 @@ if (($tier != 1) && (! $show)) {
 <? /********** SHOW SERVERS, GROUPED BY COUNTRY **********/
 foreach ((array)$CC as $grp => $grpcc) {
   $dis = "table-row-group";
-  if (($tier == 2) && ($ccg != "ALL") && ($ccg != $grp) && (! $show)) $dis = "none";
+  if (($tier == 2) && ($ccg != "ALL") && ($ccg != $grp) && (! $show) && (! $search)) $dis = "none";
   echo "    <div name='ccg[$grp]' style='display:$dis;'>\n";
   foreach ((array)$grpcc as $srv) {
+    $status = strtoupper($srv['zonestatus'][0]);
+      if (! $status) $status = "PASS";
+    if (($status == "DELETED") && (! $show)) continue;
     $dc = $srv['dc'][0];
     $short = preg_replace('#(?:\.dns)\.opennic\.glue#', '', $dc);
     $desc = $srv['description'][0];
 
     unset($owner, $srv['manager']['count']);
-    foreach((array)$srv['manager'] as $mng) {
+    $alt = array();
+    foreach((array)$srv['manager'] as $key => $mng) {
       preg_match('#uid=([a-z0-9]*)#i', $mng, $match);
-      if ($match[1]) $owner[] = $match[1];
+      if ($match[1]) {
+        $owner[$key] = $match[1];
+        foreach((array)$srv['displayname'] as $val) {
+          $tmp = explode("=", $val);
+          if ($tmp[0] == $match[1]) $alt[$key] = $tmp[1];
+        }
+      }
     }
 
     $location = $srv['locrecordtxt'][0];
@@ -350,8 +423,6 @@ foreach ((array)$CC as $grp => $grpcc) {
 */
     $logpol = $srv['loggingpolicy'][0];
       $logpol = preg_replace('/"/', '&quot;', $logpol);
-    $status = strtoupper($srv['zonestatus'][0]);
-      if (! $status) $status = "PASS";
 
     unset($srv['arecord']['count']);
     unset($ip4, $ip6);
@@ -360,9 +431,11 @@ foreach ((array)$CC as $grp => $grpcc) {
     if (count($srv['arecord'])) $ip4 = implode("<br>", $srv['arecord']);
     if (! $ip4) $ip4 = "&nbsp;";
     unset($srv['aaaarecord']['count']);
-    if ($ADMIN)  foreach((array)$srv['aaaarecord'] as $key => $val) {
+    foreach((array)$srv['aaaarecord'] as $key => $val) {
       $wbr = preg_replace('/:/', ':<wbr>', $val);
-      $srv['aaaarecord'][$key] = "<a href='http://report.opennicproject.org/t2log/t2.php?ip_addr=$val' target='_blank'>$wbr</a>";
+      if ($ADMIN)
+        $srv['aaaarecord'][$key] = "<a href='http://report.opennicproject.org/t2log/t2.php?ip_addr=$val' target='_blank'>$wbr</a>";
+        else $srv['aaaarecord'][$key] = $wbr;
     }
     if (count($srv['aaaarecord'])) $ip6 = implode("<br>", $srv['aaaarecord']);
     if (! $ip6) $ip6 = "&nbsp;";
@@ -394,22 +467,41 @@ foreach ((array)$CC as $grp => $grpcc) {
     if ($location) $tmp = trim("($location) $tmp");
     $tmp = preg_replace('/"/', '&quot;', $tmp);
     echo "<span class='host' title=\"$tmp\"><a id='$dc' href='edit.php?srv=$dc'>$dc</a></span>";
-    echo "<span class='mono ipv4'>$ip4</span>";
-    echo "<span class='mono ipv6'>$ip6</span>";
+    $ports = "";
+    if ($srv['listenport']['count']) {
+      unset($srv['listenport']['count']);
+      $ports = implode(", ", $srv['listenport']);
+      if ($ports) $ports = "title='Additional ports: $ports'";
+    }
+    echo "<span class='mono ipv4'$ports>$ip4</span>";
+    $ports = "";
+    if ($srv['listenport6']['count']) {
+      unset($srv['listenport6']['count']);
+      $ports = implode(", ", $srv['listenport6']);
+      if ($ports) $ports = "title='Additional ports: $ports'";
+    }
+    echo "<span class='mono ipv6'$ports>$ip6</span>";
 
     //echo "<span>$lat</span>";
     //echo "<span>$lon</span>";
 
     echo "<span class='ownr'>";
     foreach((array)$owner as $key => $val) {
+      if ($alt[$key]) $val = $alt[$key];
       if (($ADMIN) && ($m = $mail[$key])) {
         echo "<a class='mail' href='mailto:$m'>$val</a><br>";
       } else echo "$val<br>";
     }
     echo "</span>";
 
+    $down = "";
+    if ($tm = strtotime($srv['zonestatussince'][0])) {
+      $df = diffdate($tm);
+      $down = " since " . gmdate("M d, H:i", $tm) . " UTC";
+      if ($str = $df['string']) $down .= " ($str)";
+    }
     echo "<span class='stat'";
-    if ($title = $STATUS[$status]['title']) echo " title='$title'";
+    if ($title = $STATUS[$status]['title']) echo " title='$title$down'";
     echo ">" . $STATUS[$status]['stat'] . "</span>";
     echo "</p>\n";
   }

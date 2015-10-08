@@ -56,8 +56,13 @@ if (! $EXISTS) {
 } else {
   // Update some entries //
   $owner = $_POST['owner'];
-  foreach((array)$owner as $mng)
-    if ($mng) $rec['manager'][] = "uid=$mng,o=users,dc=opennic,dc=glue";
+  $display = $_POST['display'];
+  $rec['displayname'] = array();
+  foreach((array)$owner as $key => $mng)
+    if ($mng) {
+      $rec['manager'][] = "uid=$mng,o=users,dc=opennic,dc=glue";
+      if ($alt = $display[$key]) $rec['displayname'][] = "$mng=$alt";
+    }
   if ($status = strtoupper($_POST['status'])) $rec['zonestatus'] = $status;
 }
 
@@ -169,14 +174,32 @@ sort($tmp);  $rec['listendnscryptport6'] = $tmp;
 
 //$rec = array_filter($rec, "nullFilter");
 
-//echo "<pre>New "; print_r($rec); echo "</pre>"; die;
+//echo "<pre>New "; print_r($rec); echo "</pre>";
 //echo "<pre>";
 
+if (! $dc) header("Location: /");
 $dn = "dc=$dc,o=servers," . $LDAP['base'];
 if ($EXISTS) {
   // modify record //
-  $ldapbind = ldap_bind($LDAP['conn'], $_SESSION['user_dn'], $_SESSION['pass']);
-  if ($rec['zonestatus'] == $oldrec[0]['zonestatus'][0])  $rec['zonestatus'] = "UPDATED";
+  logger("Saved record for $dc");
+  $ldapbind = ldap_bind($LDAP['conn'], $LDAP['admin_dn'], $LDAP['admin_pass']);
+  //$ldapbind = ldap_bind($LDAP['conn'], $_SESSION['user_dn'], $_SESSION['pass']);
+  if ($rec['zonestatus'] != $oldrec[0]['zonestatus'][0])
+    $rec['zonestatussince'] = gmdate("YmdHis") . "Z";
+  if (($rec['zonestatus'] == $oldrec[0]['zonestatus'][0]) && ($rec['zonestatus'] == "PASS")) {
+    $rec['zonestatus'] = "UPDATED";
+    $rec['zonestatussince'] = gmdate("YmdHis") . "Z";
+  }
+//echo "<pre>OLD: "; print_r($rec); echo "</pre>";
+/*
+  if ($rec['zonestatus'] == $oldrec[0]['zonestatus'][0]) {
+    if (($rec['zonestatus'] == "PASS")
+     || ($rec['zonestatus'] == "FAIL")
+     || ($rec['zonestatus'] == "DOWN")
+     || ($rec['zonestatus'] == "OFFLINE"))
+      $rec['zonestatus'] = "UPDATED";
+  }
+*/
   foreach($rec as $key => $val) {
     unset($old);
     $old[$key] = $oldrec[0][$key];
@@ -186,16 +209,35 @@ if ($EXISTS) {
 //echo "<pre>OLD: "; print_r($old); echo "</pre>";
 //echo "<pre>NEW: "; print_r($tmp); echo "</pre>";
     if (count($old[$key])) @ldap_mod_del($LDAP['conn'], $dn, $old);
-    if (($tmp[$key]) && ($tmp[$key] != "FALSE")) @ldap_modify($LDAP['conn'], $dn, $tmp);
+    if (($tmp[$key]) && ($tmp[$key] != "FALSE")) {
+      ldap_modify($LDAP['conn'], $dn, $tmp);
+      unset($oldrec[0][$key]['count']);
+
+      // Logging
+      if (($key != "zonestatus") && ($tmp[$key] != "UPDATED")) {
+//echo "$key<pre>"; print_r($tmp); echo "</pre>";
+        if (($tmp[$key] != $oldrec[0][$key]) && ($tmp[$key] != $oldrec[0][$key][0])) {
+          $log = $tmp[$key];
+          if (is_array($log)) {
+            //$log = implode(", ", $tmp[$key]);
+            logger(": Modified $key:");
+            foreach((array)$log as $val) logger(": - $val");
+          } else logger(": Modified $key: \"$log\"");
+        }
+      }
+
+    } else if ($oldrec[0][$key]) logger(": Deleted $key");
     if (ldap_errno($LDAP['conn'])) {
       $err = ldap_error($LDAP['conn']);
-      echo "[$key] $err<br>\n";
+      //echo "[$key] $err<br>\n";
+      logger(": LDAP error updating $key: $err");
     }
   }
   //ldap_modify($LDAP['conn'], $dn, $rec);
 
 } else {
   // add new record //
+  logger("Created record for $dc");
   $ldapbind = ldap_bind($LDAP['conn'], $LDAP['admin_dn'], $LDAP['admin_pass']);
   ldap_add($LDAP['conn'], $dn, $rec);
 //echo "<pre>"; print_r($rec); echo "</pre>";

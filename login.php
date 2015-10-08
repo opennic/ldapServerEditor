@@ -9,6 +9,7 @@ $title = "OpenNIC Server Registration";
   <meta content="text/html; charset=UTF-8" http-equiv="content-type">
   <title><?=$title?></title>
   <link rel="stylesheet" href="style.css" type="text/css" media="all">
+  <link rel='icon' type='image/png' href='network.png'>
 </head>
 
 <body>

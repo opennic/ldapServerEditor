@@ -1,9 +1,20 @@
 <?php
 session_start();
+if ((! $_SESSION['user']) || (! $_SESSION['pass'])) header("Location: /");
+
+include("config.php");
+/*
+// Check if user is T1 op
+$dn = "o=admins,".$LDAP['base'];
+$filter = "tier1operator=".$_SESSION['user_dn'];
+$attr = array("tier1operator");
+$ldapbind = ldap_bind($LDAP['conn'], $LDAP['admin_dn'], $LDAP['admin_pass']);
+$query = @ldap_search($LDAP['conn'], $dn, $filter, $attr);
+$res = @ldap_get_entries($LDAP['conn'], $query);
+if (! $res['count']) header("Location: /");
+*/
 
 if ($city = $_POST['city']) {
-  include("config.php");
-
   $citysearch = $city;
   $city = str_replace(",", "+", $city);
   $city = str_replace(" ", "+", $city);
@@ -60,6 +71,7 @@ if ($city = $_POST['city']) {
   <meta content="text/html; charset=UTF-8" http-equiv="content-type">
   <title>OpenNIC Server Registration</title>
   <link rel="stylesheet" href="style.css" type="text/css" media="all">
+  <link rel='icon' type='image/png' href='network.png'>
   <style>
     body { font-family: Arial,Helvetica,sans-serif; }
   </style>
@@ -107,6 +119,10 @@ foreach((array)$search as $addr => $val) {
 }
 ?>
 <? } ?>
+
+    <a href='<?=$_SESSION['lastpage']?>' style='text-decoration:none'>
+      <button style='float:right'>Cancel</button>
+    </a>
   </div>
 </div>
 </body>

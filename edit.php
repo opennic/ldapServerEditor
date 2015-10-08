@@ -9,8 +9,7 @@
 session_start();
 if ((! $_SESSION['user']) || (! $_SESSION['pass']))
   $READONLY = " readonly";
-  //header("Location: login.php");
-if (! $_SESSION['lastpage']) $_SESSION['lastpage'] = "view.php";
+if (! $_SESSION['lastpage']) $_SESSION['lastpage'] = "/";
 
 include("config.php");
 $title = "OpenNIC Server Registration";
@@ -26,6 +25,15 @@ $ldapbind = ldap_bind($LDAP['conn'], $LDAP['admin_dn'], $LDAP['admin_pass']);
 $query = @ldap_search($LDAP['conn'], $dn, $filter, $attr);
 $res = @ldap_get_entries($LDAP['conn'], $query);
 if ($res['count']) $ADMIN = true;
+
+// Get server count
+$dn = "o=servers,".$LDAP['base'];
+$filter = "(&(opennicserverrole=tier2)(!(zonestatus=deleted)))";
+$attr = array("dc");
+$query = @ldap_search($LDAP['conn'], $dn, $filter, $attr);
+$res = @ldap_get_entries($LDAP['conn'], $query);
+$server_count = $res['count'];
+$dc = $res[0]['dc'][0];
 
 
 // Get server info //
@@ -48,13 +56,27 @@ if ($SRV = $_GET['srv']) {
   $data = $res[0];
   $_SESSION['last_edit'] = $SRV;
 //  echo "<pre>"; print_r($data); echo "</pre>";
-} else if (! $_SESSION['user']) header("Location: view.php");
+} else if (! $_SESSION['user']) header("Location: /");
 $_SESSION['lastsrv'] = $SRV;
 
 
 // Check if new server city was passed
 $NS = "ns??";
 if ((! $SRV) && (! $READONLY)) {
+  // First ensure user isn't making too many servers
+  $dn = "o=servers,".$LDAP['base'];
+  $filter = "(&(manager=".$_SESSION['user_dn'].")(opennicserverrole=tier2)(!(zonestatus=deleted)))";
+  $attr = array("dc");
+  $query = @ldap_search($LDAP['conn'], $dn, $filter, $attr);
+  $res = @ldap_get_entries($LDAP['conn'], $query);
+  $user_server_count = $res['count'];
+  $user_server_pct = floor(100 * ($user_server_count / $server_count));
+  if ($user_server_pct >= $max_servers) {
+    $_SESSION['err'] = "You have exceeded the maximum number of servers allowed per user.";
+    if (! $ADMIN) header("Location: /");
+  }
+
+  // Now get city info
   $search = $_SESSION['city_search'];
   $addr = $_GET['addr'];
   if ($results = ($search[$addr])) {
@@ -93,6 +115,7 @@ if ((! $SRV) && (! $READONLY)) {
 // Get owner info
 unset($data['manager']['count']);
 foreach ((array)$data['manager'] as $key => $dn) {
+  $dn = strtolower($dn);
   if ($dn == $_SESSION['user_dn']) $OWNER = true;
   if (! $dn) $dn = $_SESSION['user_dn'];
   $filter = "uid=*";
@@ -109,10 +132,24 @@ foreach ((array)$data['manager'] as $key => $dn) {
   $uid[$key] = $res[0]['uid'][0];
   $name[$key] = $res[0]['cn'][0];
   $mail[$key] = $res[0]['mail'][0];
+  foreach((array)$data['displayname'] as $val) {
+    $tmp = explode("=", $val);
+    if ($tmp[0] == $res[0]['uid'][0]) $alt[$key] = $tmp[1];
+  }
 }
 
 if ((! $ADMIN) && (! $OWNER)) $READONLY = " readonly";
 if ($READONLY) $DISABLED = " disabled";
+
+$log = "Edit $SRV ";
+  if ($READONLY) $log .= "(READONLY)";
+  if ($ADMIN) $log .= "(ADMIN)";
+  if ($OWNER) $log .= "(OWNER)";
+  logger($log);
+if ($_SESSION['user_dn']) {
+  logger(": by ".$_SESSION['user_dn']);
+  //foreach ((array)$data['manager'] as $dn)  logger(": - ".$dn);
+}
 
 
 function DECtoDMS($dec) {
@@ -132,6 +169,7 @@ function DECtoDMS($dec) {
   <meta content="text/html; charset=UTF-8" http-equiv="content-type">
   <title><?=$title?></title>
   <link rel="stylesheet" href="style.css" type="text/css" media="all">
+  <link rel='icon' type='image/png' href='network.png'>
 
   <script type="text/javascript">
 <?/* if ((! $SRV) && (! $READONLY)) { ?>
@@ -170,7 +208,7 @@ function DECtoDMS($dec) {
   </script>
 </head>
 
-<body>
+<body onload="document.getElementById('errmsg').style.opacity='0'">
 <? if (! $READONLY) { ?>
 <form id="frm" name="frm" action="_edit.php" method="post">
 <? } ?>
@@ -181,14 +219,16 @@ function DECtoDMS($dec) {
 <? /*
   <a href='<?=$_SESSION['lastpage']."#$SRV"?>'><button type='button' style='float:left' autofocus><?=$close?></button></a>
 */ ?>
-  <a href='<?=$_SESSION['lastpage']?>'><button type='button' style='float:left' autofocus><?=$close?></button></a>
+  <a href='<?=$_SESSION['lastpage']?>' style='text-decoration:none'>
+    <button type='button' style='float:left' autofocus><?=$close?></button>
+  </a>
 <? if (! $READONLY) { ?>
   <input type='submit' value='Update' style='float:right'>
 <? } ?>
 
   <b><?
 if ($SRV)
- echo "$SRV<input type='hidden' id='dc' name='dc' value='$SRV'>";
+  echo "$SRV<input type='hidden' id='dc' name='dc' value='$SRV'>";
 else {
 // echo "<input type='text' id='dc' name='dc' size='12' value='' autofocus> <label id='dc'>. dns . opennic . glue</label>";
   echo "<input type='hidden' id='ns' name='ns' value='$NS'><label id='nsn'>$NS</label> . ";
@@ -202,52 +242,68 @@ if ($SRV)
   echo "  Created: " . gmdate("Y-M-d H:i", strtotime($data['createtimestamp'][0])) . " UTC<br>\n";
 
 if ($READONLY) {
-  foreach((array)$uid as $val)
+  foreach((array)$uid as $key => $val) {
+    if ($alt[$key]) $val = $alt[$key];
     echo "  Owner: <b>$val</b><br>\n";
+  }
 } else {
   $tmp = "<label>Owner(s):</label>"; $val = "";
   echo "<div class='owners'>";
   foreach((array)$mail as $key => $val) {
+    if (! $val) continue;
     echo "$tmp";
 //    if ($ADMIN)
-      echo "<input type='text' value='" . $uid[$key] . "' name='owner[$key]' size=12> "; // . $name[$key];
+      echo "<input type='text' value='" . $uid[$key] . "' name='owner[$key]' size=10 title='Actual username'> ";
+      echo "<input type='text' value='" . $alt[$key] . "' name='display[$key]' size=10 title='Alternate name to be displayed'> ";
 //      else echo $uid[$key];  //echo "$name[$key]";
-    if ($ad = $mail[$key]) echo " <a href='mailto:$ad'>&lt;$ad&gt;</a><br>\n";
+    if ($ad = $mail[$key]) echo " <a href='mailto:$ad'>&lt;$ad&gt;</a>";
+    echo "<br>\n";
     $tmp = "<label></label>";
   }
   $key++;
-  if ( (($ADMIN) || ($OWNER)) && ($val) )
-    echo "$tmp<input type='text' value='' name='owner[$key]' size=12>";
+  //if ( (($ADMIN) || ($OWNER)) && ($val) )
+    echo "$tmp<input type='text' value='' name='owner[$key]' size=10 title='Actual username'>";
+    echo " <input type='text' value='' name='display[$key]' size=10 title='Alternate name to be displayed'>";
   echo "</div>\n";
 }
 
-if ($ADMIN) {
+if (($ADMIN) || ($OWNER)) {
   $status = strtoupper($data['zonestatus'][0]);
   switch ($status) {
     case "APPROVAL":
-      if ($OWNER) $btn = array("APPROVAL", "PENDING");
-      else $btn = array("APPROVAL", "NEW", "PENDING");
+      if ($ADMIN) $btn = array("APPROVAL", "NEW", "DISABLED", "DELETED");
+      else if ($OWNER) $btn = array("APPROVAL", "DISABLED", "DELETED");
       break;
     case "NEW":
-      $btn = array("NEW", "UPDATED", "PASS", "FAIL", "OFFLINE", "PENDING");
+      if ($ADMIN) $btn = array("NEW", "UPDATED", "PASS", "FAIL", "OFFLINE", "DISABLED", "PENDING");
+      else if ($OWNER) $btn = array("UPDATED", "DISABLED", "PENDING");
       break;
     case "UPDATED":
-      $btn = array("UPDATED", "PASS", "FAIL", "OFFLINE", "PENDING");
+      if ($ADMIN) $btn = array("UPDATED", "PASS", "FAIL", "OFFLINE", "DISABLED", "PENDING");
+      else if ($OWNER) $btn = array("UPDATED", "DISABLED", "PENDING");
       break;
     case "PASS":
-      $btn = array("UPDATED", "PASS", "FAIL", "OFFLINE", "PENDING");
+      if ($ADMIN) $btn = array("UPDATED", "PASS", "FAIL", "OFFLINE", "DISABLED", "PENDING");
+      else if ($OWNER) $btn = array("UPDATED", "PASS", "DISABLED", "PENDING");
       break;
     case "FAIL":
-      $btn = array("UPDATED", "PASS", "FAIL", "OFFLINE", "PENDING");
+      if ($ADMIN) $btn = array("UPDATED", "PASS", "FAIL", "OFFLINE", "DISABLED", "PENDING");
+      else if ($OWNER) $btn = array("UPDATED", "FAIL", "DISABLED", "PENDING");
       break;
     case "OFFLINE":
-      $btn = array("UPDATED", "PASS", "FAIL", "OFFLINE", "PENDING");
+      if ($ADMIN) $btn = array("UPDATED", "PASS", "FAIL", "OFFLINE", "DISABLED", "PENDING");
+      else if ($OWNER) $btn = array("UPDATED", "OFFLINE", "DISABLED", "PENDING");
+      break;
+    case "DISABLED":
+      if ($ADMIN) $btn = array("UPDATED", "PASS", "FAIL", "OFFLINE", "DISABLED", "PENDING");
+      else if ($OWNER) $btn = array("UPDATED", "DISABLED", "PENDING");
       break;
     case "PENDING":
-      $btn = array("UPDATED", "PENDING", "DELETED");
+      $btn = array("UPDATED", "DISABLED", "PENDING", "DELETED");
       break;
     case "DELETED":
-      $btn = array("UPDATED", "DELETED");
+      if ($ADMIN) $btn = array("UPDATED", "DISABLED", "DELETED");
+      else if ($OWNER) $btn = array("APPROVAL", "DELETED");
       break;
     default:
       // New record being created
@@ -264,9 +320,16 @@ if ($ADMIN) {
   }
   echo "    </ul>\n";
 }
+
+/********** SHOW ERROR MESSAGE **********/
+$err = $_SESSION['err'];
+if (! $err) $err = "&nbsp;";
+unset($_SESSION['err']);
+echo "  <div id='errmsg' class='err'>$err</div>\n";
 ?>
 
   <hr>
+
 <!--  <label><input type='checkbox' name='disabled' value='TRUE'<?if ($data['zonedisabled']=="TRUE") echo " checked=1"?>>Disabled</label><br> -->
 <?
 $role = $data['opennicserverrole'][0];
@@ -404,7 +467,7 @@ if ($role == "tier1") {
   $key++;
   echo "<label>Registrar</label>: <input type='text' name='regURL[$key]' size=25 value=''><br>\n";
 */
-  echo "<label>Registrar</label>: <input type='text' name='regURL[0]' size=40 value='". $data['registrarurl'][0] . "'><br>\n";
+  echo "<label>Registrar</label>: <input type='text' name='regURL[0]' size=40 value='". $data['registrarurl'][0] . "' title='Website to register domains'><br>\n";
 }
 ?>
   </div>
