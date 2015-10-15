@@ -5,6 +5,8 @@ include("fn.php");
 $page_timeout = 20;		// Value in minutes
 $logfile = "/var/log/serveredits.log";
 
+$max_servers = 5;		// percentage
+
 $LDAP['admin_user'] = "<USERNAME>";
 $LDAP['admin_pass'] = "<PASSWORD>";
 $LDAP['host'] = "ldaps://ldap.opennic.glue";

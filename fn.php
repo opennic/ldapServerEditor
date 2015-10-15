@@ -29,29 +29,29 @@ $STATUS = array(
 	),
 	"PASS" => array(
 		"stat" => "normal",
-		"button" => "Normal",
+		"button" => "Pass",
 		"title" => "Passing",
 		"css" => "norm",
 		"abbr" => "Ok",
 	),
 	"FAIL" => array(
 		"stat" => "temp outage",
-		"button" => "Outage",
-		"title" => "Failing some tests",
+		"button" => "Failed",
+		"title" => "Failed testing",
 		"css" => "fail",
 		"abbr" => "Fail",
 	),
 	"DOWN" => array(
 		"stat" => "down",
 		"button" => "Down",
-		"title" => "Down, server is not responding",
+		"title" => "Server not responding",
 		"css" => "dwn",
 		"abbr" => "Down",
 	),
 	"OFFLINE" => array(
 		"stat" => "offline",
 		"button" => "Offline",
-		"title" => "Extended failure, server is offline",
+		"title" => "Extended failure",
 		"css" => "off",
 		"abbr" => "Offln",
 	),
@@ -120,15 +120,18 @@ function get_client_ip() {
   return $ipaddress;
 }
 
-function getNS($region, $country) {
+function getNS($region, $country, $tier=2) {
   // Get the first available NS number for a given region/country
   global $LDAP;
 
+  $dn = "o=servers,".$LDAP['base'];
   $server_name = trim("$region.$country", ".");
 //echo "$server_name\n";
 
-  $dn = "o=servers,".$LDAP['base'];
-  $filter = "dc=*.$server_name.dns.opennic.glue";
+  if ($tier == 1)  $filter = "(opennicserverrole=tier1)";
+  if ($tier == 2)
+    $filter = "(&(dc=*.$server_name.dns.opennic.glue)(opennicserverrole=tier2))";
+
   $attr = array("dc");
   $ldapbind = ldap_bind($LDAP['conn'], $LDAP['admin_dn'], $LDAP['admin_pass']);
   $query = @ldap_search($LDAP['conn'], $dn, $filter, $attr);
@@ -139,8 +142,11 @@ function getNS($region, $country) {
   $lastNS = 0;
   foreach((array)$res as $arr) {
     if ($dc = $arr['dc'][0]) {
-      preg_match("/^ns([0-9]{1,3})(\.$server_name)/i", $dc, $match);
-      //echo "$dc: "; print_r($match);
+      if ($tier == 1)
+        preg_match("/^ns([0-9]{1,3})(\.opennic.glue)/i", $dc, $match);
+      if ($tier == 2)
+        preg_match("/^ns([0-9]{1,3})(\.$server_name)/i", $dc, $match);
+//      echo "$dc($tier): <pre>"; print_r($match); echo "</pre>";
       if (($match[2]) && ($match[1] > $lastNS)) $lastNS = $match[1];
     }
   }

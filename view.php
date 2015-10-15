@@ -73,7 +73,7 @@ if ($show == "mine")
   }
 if ((! $ADMIN) && (! $show)) $filter = "(&$filter(!(zonestatus=deleted)))";
 //echo "FILTER: $filter<br>";
-$attr = array("*");
+$attr = array("*", "createtimestamp");
 
 $query = @ldap_search($LDAP['conn'], $dn, $filter, $attr);
 @ldap_sort($LDAP['conn'], $query, "dc");
@@ -238,6 +238,15 @@ function sortstat($a, $b) {
   return (0);
 }
 
+function sortcrtd($a, $b) {
+  $a0 = $a['datecreated'];
+  $b0 = $b['datecreated'];
+
+  if ($a0 < $b0) return (-1);
+  if ($a0 > $b0) return (1);
+  return (0);
+}
+
 function sortby($tab, $col) {
   // $tab = name of tab on page
   // $col = code for tab column
@@ -289,7 +298,7 @@ function sortby($tab, $col) {
 <? if ($search) { ?>
   <a href='<?=$SELF?>'><button type='button'>Clear</button></a>
 <? } ?>
-  <input name='search' value='<?=$search?>' autofocus=1 title='Search on hostname, IP, or owner'>
+  <input type='text' name='search' value='<?=$search?>' autofocus=1 title='Search on hostname, IP, or owner'>
   <button type='submit'>Search</button>
 </form></div></h3>
 
@@ -297,10 +306,10 @@ function sortby($tab, $col) {
  <div id="view">
 <? if ($_SESSION['user']) { ?>
   <!-- ADMIN BUTTONS -->
-  <a href='logoff.php' class='fn r'><button type='button'>Sign off</button></a>
+  <a href='logoff.php' class='fn r logoff'><button type='button'>Sign off</button></a>
   <a href='new.php' class='fn l' style='margin-right:20px'><button type='button'>Add new server</button></a>
 <? } else { ?>
-  <a href='login.php' class='fn r'><button type='button'>Log in</button></a>
+  <a href='login.php' class='fn r login'><button type='button'>Log in</button></a>
 <? } ?>
 
   <!-- TIER BUTTONS -->
@@ -385,6 +394,7 @@ if (($tier != 1) && (! $show) && (! $search)) {
       <? sortby("IPv4", "ipv4"); ?>
       <? sortby("IPv6", "ipv6"); ?>
       <? sortby("Owner(s)", "ownr"); ?>
+      <? sortby("Added", "crtd"); ?>
       <? sortby("Status", "stat"); ?>
     </p>
 <? /********** SHOW SERVERS, GROUPED BY COUNTRY **********/
@@ -494,6 +504,11 @@ foreach ((array)$CC as $grp => $grpcc) {
     }
     echo "</span>";
 
+    //$ts = $srv['datecreated'][0];
+    if (! $ts = $srv['datecreated'][0]) $ts = $srv['createtimestamp'][0];
+    $up = ($ts) ? gmdate("Y-M-d", strtotime($ts)) : "";
+    echo "<span class='crtd'>$up</span>";
+
     $down = "";
     if ($tm = strtotime($srv['zonestatussince'][0])) {
       $df = diffdate($tm);
@@ -502,7 +517,7 @@ foreach ((array)$CC as $grp => $grpcc) {
     }
     echo "<span class='stat'";
     if ($title = $STATUS[$status]['title']) echo " title='$title$down'";
-    echo ">" . $STATUS[$status]['stat'] . "</span>";
+    echo ">" . $STATUS[$status]['button'] . "</span>";
     echo "</p>\n";
   }
   echo "    </div>\n";

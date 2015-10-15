@@ -9,10 +9,16 @@ include("config.php");
 //echo "<pre>"; print_r($_POST); echo "</pre>"; die;
 $dc = trim($_POST['dc']);
 $role = strtolower($_POST['role']);
+$tier = intval(substr($role, 4));
+  if ($tier == "") $tier = 2;
 
 
 // Validate new NS
-if ($NS = $_POST['ns']) {
+if (($tier <= 1) && ($NS = $_POST['t1'])) {
+  //$NS = getNS('', '', 1);
+  $dc = "ns$NS.opennic.glue";
+}
+if (($tier >= 2) && ($NS = $_POST['ns'])) {
   $ST = substr(preg_replace('/[^a-z]/i', '', $_POST['st']), 0, 3);
   $CO = substr(preg_replace('/[^a-z]/i', '', $_POST['co']), 0, 2);
   $NS = getNS($ST, $CO);
@@ -39,11 +45,18 @@ if ($oldrec[0]['dc'][0] == $dc) $EXISTS=true; else $EXISTS=false;
 //echo "<pre>"; print_r($oldrec); echo "</pre>"; die;
 
 
+$owner = $_POST['owner'];
 if (! $EXISTS) {
   // Create new record //
-  $rec['objectclass'][] = "opennicDomain";
-  $rec['objectclass'][] = "opennicServer";
-  $rec['manager'] = $_SESSION['user_dn'];
+  $rec['objectclass'][] = "opennicdomain";
+  $rec['objectclass'][] = "opennicdomaindates";
+  $rec['objectclass'][] = "opennicserver";
+  //$rec['manager'] = $_SESSION['user_dn'];
+  //$rec['manager'] = "uid=".current($owner).",o=users,".$LDAP['base'];
+  foreach((array)$owner as $key => $mng)  if ($mng) {
+    $rec['manager'][] = "uid=$mng,o=users,dc=opennic,dc=glue";
+    if ($alt = $display[$key]) $rec['displayname'][] = "$mng=$alt";
+  }
   $rec['opennicserverrole'] = $role;
   $rec['dc'] = $dc;
     if ($role == "tier1")
@@ -52,18 +65,28 @@ if (! $EXISTS) {
       if (substr($dc,-17) != ".dns.opennic.glue") $dc .= ".dns.opennic.glue";
   $rec['associateddomain'] = $dc;
   $rec['zonestatus'] = "APPROVAL";
+  $rec['datecreated'] = date("YmdHis")."Z";
 
 } else {
   // Update some entries //
-  $owner = $_POST['owner'];
   $display = $_POST['display'];
   $rec['displayname'] = array();
-  foreach((array)$owner as $key => $mng)
-    if ($mng) {
-      $rec['manager'][] = "uid=$mng,o=users,dc=opennic,dc=glue";
-      if ($alt = $display[$key]) $rec['displayname'][] = "$mng=$alt";
-    }
-  if ($status = strtoupper($_POST['status'])) $rec['zonestatus'] = $status;
+  foreach((array)$owner as $key => $mng)  if ($mng) {
+    $rec['manager'][] = "uid=$mng,o=users,dc=opennic,dc=glue";
+    if ($alt = $display[$key]) $rec['displayname'][] = "$mng=$alt";
+  }
+  if ($status = strtoupper($_POST['status']))  $rec['zonestatus'] = $status;
+  if ($created = $_POST['created']) {
+    //$datecreated = implode("", $created) . "00Z";
+    $datecreated  = sprintf('%04d', $created['yr']);
+    $datecreated .= sprintf('%02d', $created['mo']);
+    $datecreated .= sprintf('%02d', $created['dy']);
+    $datecreated .= sprintf('%02d', $created['hr']);
+    $datecreated .= sprintf('%02d', $created['mi']);
+    $datecreated .= "00Z";
+    $rec['datecreated'] = $datecreated;
+  }
+//echo "<pre>"; print_r($rec); echo "</pre>"; die;
 }
 
 //$tmp = strtoupper($_POST['disabled']);
@@ -71,6 +94,7 @@ if (! $EXISTS) {
 //  $rec['zoneDisabled'] = $tmp;
 
 // A records
+/*
 $rec['arecord'] = $_POST['A'];
 foreach((array)$rec['arecord'] as $key => $val) {
   $ip = trim($val);
@@ -80,8 +104,15 @@ foreach((array)$rec['arecord'] as $key => $val) {
   }
 }
 $rec['arecord'] = array_values($rec['arecord']);
+*/
+foreach((array)$_POST['A'] as $val) {
+  $ip = trim($val);
+  if (!filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) === false)
+    $rec['arecord'][] = $ip;
+}
 
 // AAAA records
+/*
 $rec['aaaarecord'] = $_POST['AAAA'];
 foreach((array)$rec['aaaarecord'] as $key => $val) {
   $ip = trim($val);
@@ -91,6 +122,12 @@ foreach((array)$rec['aaaarecord'] as $key => $val) {
   }
 }
 $rec['aaaarecord'] = array_values($rec['aaaarecord']);
+*/
+foreach((array)$_POST['AAAA'] as $val) {
+  $ip = trim($val);
+  if (!filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6) === false)
+    $rec['aaaarecord'][] = $ip;
+}
 
 // IPv4 Ports
 $tmp = explode(",", trim($_POST['listenPort']));
@@ -99,7 +136,10 @@ foreach((array)$tmp as $key => $val) {
   if (! $tmp[$key]) unset($tmp[$key]);
   if (! filter_var($portnum, FILTER_VALIDATE_INT, array("min_range" => 0, "max_range" => 65535)) === false) unset($tmp[$key]);
 }
-sort($tmp); $rec['listenport'] = $tmp;
+if (count($tmp)) {
+  sort($tmp);
+  $rec['listenport'] = $tmp;
+}
 
 // IPv6 Ports
 $tmp = explode(",", trim($_POST['listenPort6']));
@@ -108,7 +148,10 @@ foreach((array)$tmp as $key => $val) {
   if (! $tmp[$key]) unset($tmp[$key]);
   if (! filter_var($portnum, FILTER_VALIDATE_INT, array("min_range" => 0, "max_range" => 65535)) === false) unset($tmp[$key]);
 }
-sort($tmp); $rec['listenport6'] = $tmp;
+if (count($tmp)) {
+  sort($tmp);
+  $rec['listenport6'] = $tmp;
+}
 
 // LOC record
 $rec['locrecord'] = preg_replace('/[^ewnsm0-9\. ]/i', '', trim($_POST['loc']));
@@ -119,7 +162,7 @@ $tmp = strtoupper($_POST['whitelist']);
 $tmp = strtoupper($_POST['blacklist']);
   if ($tmp != "TRUE") $tmp = "FALSE";
   $rec['useblacklisting'] = $tmp;
-$rec['description'] = trim($_POST['desc']);
+if ($tmp = trim($_POST['desc'])) $rec['description'] = $tmp;
 
 // TLDs
 $tmp = explode(",", trim($_POST['TLDs']));
@@ -127,8 +170,10 @@ $tmp = explode(",", trim($_POST['TLDs']));
     $tmp[$key] = trim($val, ", ");
     if (! $tmp[$key]) unset($tmp[$key]);
   }
-  sort($tmp);
-  $rec['opennictlds'] = $tmp;
+  if (count($tmp)) {
+    sort($tmp);
+    $rec['opennictlds'] = $tmp;
+  }
 $rec['registrarurl'] = trim($_POST['regURL'][0]);
 //
 
@@ -160,7 +205,10 @@ foreach((array)$tmp as $key => $val) {
   if (! $tmp[$key]) unset($tmp[$key]);
   if (! filter_var($portnum, FILTER_VALIDATE_INT, array("min_range" => 0, "max_range" => 65535)) === false) unset($tmp[$key]);
 }
-sort($tmp);  $rec['listendnscryptport'] = $tmp;
+if (count($tmp)) {
+  sort($tmp);
+  $rec['listendnscryptport'] = $tmp;
+}
 
 // DNSCrypt IPv6 ports
 $tmp = explode(",", trim($_POST['listenDNSCryptPort6']));
@@ -169,12 +217,15 @@ foreach((array)$tmp as $key => $val) {
   if (! $tmp[$key]) unset($tmp[$key]);
   if (! filter_var($portnum, FILTER_VALIDATE_INT, array("min_range" => 0, "max_range" => 65535)) === false) unset($tmp[$key]);
 }
-sort($tmp);  $rec['listendnscryptport6'] = $tmp;
+if (count($tmp)) {
+  sort($tmp);
+  $rec['listendnscryptport6'] = $tmp;
+}
 //
 
 //$rec = array_filter($rec, "nullFilter");
 
-//echo "<pre>New "; print_r($rec); echo "</pre>";
+//echo "<pre>New "; print_r($rec); echo "</pre>"; die;
 //echo "<pre>";
 
 if (! $dc) header("Location: /");
@@ -240,7 +291,7 @@ if ($EXISTS) {
   logger("Created record for $dc");
   $ldapbind = ldap_bind($LDAP['conn'], $LDAP['admin_dn'], $LDAP['admin_pass']);
   ldap_add($LDAP['conn'], $dn, $rec);
-//echo "<pre>"; print_r($rec); echo "</pre>";
+//echo "$dn<pre>"; print_r($rec); echo "</pre>";
 }
 
 
